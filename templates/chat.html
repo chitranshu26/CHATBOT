@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Travel ChatBot</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="chatbox">
+    <div class="bot">👋 Hello! Let's book your ticket.</div>
+  </div>
+  <input type="text" id="user-input" placeholder="Type your message...">
+  <script>
+    const input = document.getElementById('user-input');
+    const chatbox = document.getElementById('chatbox');
+
+    input.addEventListener('keydown', async (e) => {
+      if (e.key === 'Enter') {
+        const msg = input.value;
+        chatbox.innerHTML += `<div class='user'>${msg}</div>`;
+        input.value = '';
+        const res = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg })
+        });
+        const data = await res.json();
+        chatbox.innerHTML += `<div class='bot'>${data.reply}</div>`;
+        chatbox.scrollTop = chatbox.scrollHeight;
+      }
+    });
+  </script>
+</body>
+</html>
