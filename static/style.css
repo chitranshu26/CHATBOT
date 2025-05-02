@@ -1,7 +1,7 @@
 body {
     margin: 0;
     font-family: 'Segoe UI', sans-serif;
-    background: radial-gradient(circle at top left, #6dd5ed, #2193b0);
+    background: radial-gradient(circle at top left, #b36ded, #2193b0);
     height: 100vh;
     display: flex;
     flex-direction: column;
@@ -34,7 +34,7 @@ body {
   }
   
   .bot {
-    background-color: #0078d7;
+    background-color: rgba(0, 217, 255, 0.363); 
     align-self: flex-start;
     color: #fff;
   }

@@ -2,10 +2,10 @@ from flask import Flask, render_template, request, jsonify, session
 from flask_session import Session
 import sqlite3
 from datetime import datetime
-import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from travel_fares import travel_fares
 
 app = Flask(__name__)
 app.secret_key = "supersecretkey"
@@ -27,21 +27,16 @@ def init_db():
         created_at TEXT,
         order_id TEXT
     )''')
-    # Add order_id column if not exists
-    c.execute("PRAGMA table_info(bookings)")
-    columns = [col[1] for col in c.fetchall()]
-    if "order_id" not in columns:
-        c.execute("ALTER TABLE bookings ADD COLUMN order_id TEXT")
     conn.commit()
     conn.close()
 
 init_db()
 
 # Email sending function
-def send_email(to, origin, destination, date):
+def send_email(to, origin, destination, date, order_id):
     try:
-        sender_email = "waymate01@gmail.com"  # Your Gmail email
-        app_password = "kadpuvhqfyypfaua"  # Your generated app password
+        sender_email = "waymate01@gmail.com"
+        app_password = "kadpuvhqfyypfaua"
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = "Your Ticket Confirmation"
@@ -55,6 +50,7 @@ def send_email(to, origin, destination, date):
             <p><strong>From:</strong> {origin}</p>
             <p><strong>To:</strong> {destination}</p>
             <p><strong>Date:</strong> {date}</p>
+            <p><strong>Order ID:</strong> {order_id}</p>
             <p>Thank you for booking with us!</p>
         </body>
         </html>
@@ -62,12 +58,25 @@ def send_email(to, origin, destination, date):
         msg.attach(MIMEText(html_content, "html"))
 
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender_email, app_password)  # Log in with the correct email and app password
+            server.login(sender_email, app_password)
             server.sendmail(sender_email, to, msg.as_string())
 
         print(f"✅ Email sent to {to}")
     except Exception as e:
         print(f"❌ Email sending failed: {e}")
+
+# Fare finder logic
+def find_fare(origin, destination, mode, travel_class):
+    for state in travel_fares.values():
+        for from_city, destinations in state.items():
+            if from_city.lower() == origin.lower():
+                for to_city, modes in destinations.items():
+                    if to_city.lower() == destination.lower():
+                        try:
+                            return modes[mode.lower()][travel_class]
+                        except KeyError:
+                            return None
+    return None
 
 # Flask routes
 @app.route('/')
@@ -79,7 +88,6 @@ def chat():
     user_msg = request.json.get('message')
     response = ""
 
-    # Handle order checking
     if user_msg.lower().startswith("check order"):
         try:
             order_id = user_msg.split(" ")[-1].strip()
@@ -106,11 +114,11 @@ def chat():
     step = session.get('step', 'start')
 
     if step == 'start':
-        response = "Welcome to TravelBot! Where are you traveling from?"
+        response = "👋 Hello! Let's book your ticket. Where are you traveling from?"
         session['step'] = 'from'
     elif step == 'from':
         session['from'] = user_msg
-        response = "Great! Where are you traveling to?"
+        response = "Great! Where are you traveling to? (e.g., Madurai)"
         session['step'] = 'to'
     elif step == 'to':
         session['to'] = user_msg
@@ -118,12 +126,25 @@ def chat():
         session['step'] = 'date'
     elif step == 'date':
         session['date'] = user_msg
+        response = "Which mode do you want to travel by? (train, bus, flight)"
+        session['step'] = 'mode'
+    elif step == 'mode':
+        session['mode'] = user_msg.lower()
+        response = "Please choose class type (e.g., Sleeper, 3AC, Economy, Business):"
+        session['step'] = 'class'
+    elif step == 'class':
+        session['class'] = user_msg
         response = "Please provide your email address."
         session['step'] = 'email'
     elif step == 'email':
         session['email'] = user_msg
-        response = (f"You are booking a ticket from {session['from']} to {session['to']} on {session['date']}\n"
-                    f"We will send confirmation to {session['email']}.\nConfirm? (yes/no)")
+        fare = find_fare(session['from'], session['to'], session['mode'], session['class'])
+        fare_text = f"Fare: ₹{fare}" if fare is not None else "Fare: ₹Not found"
+        response = (
+            f"You are booking a {session['mode']} ticket ({session['class']}) from {session['from']} to {session['to']} "
+            f"on {session['date']} {fare_text}. Confirmation will be sent to {session['email']}. Confirm? (yes/no)"
+        )
+        session['fare'] = fare
         session['step'] = 'confirm'
     elif step == 'confirm':
         if user_msg.lower() == "yes":
@@ -136,7 +157,7 @@ def chat():
             conn.commit()
             conn.close()
 
-            send_email(session['email'], session['from'], session['to'], session['date'])
+            send_email(session['email'], session['from'], session['to'], session['date'], mock_order_id)
 
             response = (
                 f"✅ Booking confirmed and email sent!\n"
