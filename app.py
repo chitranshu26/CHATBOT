@@ -5,6 +5,7 @@ from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import requests
 from travel_fares import travel_fares
 
 app = Flask(__name__)
@@ -118,7 +119,7 @@ def chat():
         session['step'] = 'from'
     elif step == 'from':
         session['from'] = user_msg
-        response = "Great! Where are you traveling to? (e.g., Madurai)"
+        response = "Great! Where are you traveling to? (e.g., madurai)"
         session['step'] = 'to'
     elif step == 'to':
         session['to'] = user_msg
@@ -130,7 +131,7 @@ def chat():
         session['step'] = 'mode'
     elif step == 'mode':
         session['mode'] = user_msg.lower()
-        response = "Please choose class type (e.g., Sleeper, 3AC, Economy, Business):"
+        response = "Please choose class type (e.g., sleeper, 3ac, economy, business):"
         session['step'] = 'class'
     elif step == 'class':
         session['class'] = user_msg
@@ -159,10 +160,43 @@ def chat():
 
             send_email(session['email'], session['from'], session['to'], session['date'], mock_order_id)
 
+            # Payment gateway request handling with error checking
+            try:
+                payment_response = requests.post(
+                    "https://smart-gateway.onrender.com/create_order",  # Your friend's payment gateway
+                    json={
+                        "order_id": mock_order_id,
+                        "amount": session['fare'],
+                        "email": session['email'],
+                        "amount": session['fare'],
+                        "currency": "INR",
+                        "receipt": mock_order_id
+                    }, timeout=30
+                )
+                try:
+                    payment_response_data = payment_response.json()  # Try to parse JSON
+                    razorpay_order_id = payment_response_data.get("order_id", "")
+                    key_id = payment_response_data.get("key_id", "")
+                    amount = payment_response_data.get("amount", 0)
+
+                    # Generate a pseudo payment link (in real deployment, use Razorpay Checkout integration)
+                    payment_url = (
+                    f"https://smart-gateway.onrender.com/static/index.html?"
+                    f"order_id={razorpay_order_id}&key_id={key_id}&amount={amount}"
+                    )
+
+                except ValueError:
+                    print(f"⚠️ Error parsing payment gateway response: {payment_response.text}")
+                    payment_url = "#"
+            except Exception as e:
+                print(f"⚠️ Failed to get payment URL: {e}")
+                payment_url = "#"
+
             response = (
                 f"✅ Booking confirmed and email sent!\n"
                 f"🆔 Order ID: {mock_order_id}\n"
-                "💳 [Click here to pay](<a href='/external-payment' target='_blank'>Razorpay</a>)\n\n"
+                f'💳 <a href="{payment_url}" target="_blank">Click here to pay</a>'
+
                 "✈️ Want to book another ticket? Just type **hi**!\n"
                 "📄 Want to check ticket? Type: **check order ORDER_ID**"
             )
